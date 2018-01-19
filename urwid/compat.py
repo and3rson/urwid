@@ -23,6 +23,7 @@
 from __future__ import division, print_function
 
 import sys
+import os
 
 try: # python 2.4 and 2.5 compat
     bytes = bytes
@@ -30,6 +31,13 @@ except NameError:
     bytes = str
 
 PYTHON3 = sys.version_info > (3, 0)
+WINDOWS = os.name == 'nt'
+
+if WINDOWS:
+    from ctypes import windll, byref, wintypes, GetLastError, WinError
+    from ctypes.wintypes import HANDLE, DWORD, POINTER, BOOL
+else:
+    import fcntl
 
 # for iterating over byte strings:
 # ord2 calls ord in python2 only
@@ -72,3 +80,24 @@ def with_metaclass(meta, *bases):
             return meta.__prepare__(name, bases)
     return type.__new__(metaclass, 'temporary_class', (), {})
 
+# fcntl compat
+def fcntl_set_nonblocking(fd):
+    if os.name == 'nt':
+        LPDWORD = POINTER(DWORD)
+
+        PIPE_NOWAIT = wintypes.DWORD(0x00000001)
+
+        ERROR_NO_DATA = 232
+
+        SetNamedPipeHandleState = windll.kernel32.SetNamedPipeHandleState
+        SetNamedPipeHandleState.argtypes = [HANDLE, LPDWORD, LPDWORD, LPDWORD]
+        SetNamedPipeHandleState.restype = BOOL
+
+        h = msvcrt.get_osfhandle(pipefd)
+
+        res = windll.kernel32.SetNamedPipeHandleState(h, byref(PIPE_NOWAIT), None, None)
+        if res == 0:
+            raise Exception(WinError())
+        return True
+    else:
+        fcntl.fcntl(fd, fcntl.F_SETFL, os.O_NONBLOCK)
